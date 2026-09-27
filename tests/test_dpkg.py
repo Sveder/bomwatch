@@ -44,3 +44,11 @@ def test_collect_failing_dpkg_is_none(monkeypatch):
     monkeypatch.setattr(dpkg, "has", lambda tool: True)
     monkeypatch.setattr(dpkg, "run", lambda cmd: None)
     assert dpkg.collect([]) is None
+
+
+def test_parse_records_source_package():
+    out = "ii \tlibssl3\t3.0.14-1\tamd64\topenssl\nii \tbash\t5.2\tamd64\t\n"
+    assert dpkg.parse(out) == [
+        Package("dpkg", "libssl3", "3.0.14-1", "amd64", "openssl"),
+        Package("dpkg", "bash", "5.2", "amd64", "dpkg"),
+    ]

@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 import pytest
 
 from bomwatch import snapshot
@@ -25,7 +24,8 @@ def test_make_is_sorted():
     assert snap["collectors"] == {"dpkg": "ok", "pip": "ok"}
     assert snap["created"] == "2026-09-27T01:02:03Z"
     assert snap["host"] == "h"
-    assert snap["schema"] == 3
+    assert snap["schema"] == 4
+    assert snap["os"]["system"]
     assert snap["roots"] is None
     assert [p["name"] for p in snap["packages"]] == ["a", "b"]
 
@@ -88,11 +88,8 @@ def test_baseline_takes_newest_ok_per_collector(tmp_path):
 def test_baseline_keeps_status_when_never_ok(tmp_path):
     files = [save_scan(tmp_path, [], {"dpkg": "ok", "npm": "failed"})]
     base = snapshot.baseline(files, ["npm"])
-    assert base == {
-        "collectors": {"dpkg": "ok", "npm": "failed"},
-        "packages": [],
-        "roots": None,
-    }
+    assert base["collectors"] == {"dpkg": "ok", "npm": "failed"}
+    assert base["packages"] == [] and base["roots"] is None
 
 
 def test_make_records_roots():
@@ -122,3 +119,125 @@ def test_load_rejects_other_files(tmp_path, text):
     path.write_text(text)
     with pytest.raises(ValueError, match="not a bomwatch snapshot"):
         snapshot.load(path)
+
+
+def test_save_leaves_no_temp_files(tmp_path):
+    snapshot.save(snapshot.make(PKGS, now=NOW, host="h"), tmp_path)
+    assert [p.name for p in (tmp_path / "snapshots").iterdir()] == [
+        "scan-20260927T010203Z.json"
+    ]
+
+
+def test_save_without_hard_links(tmp_path, monkeypatch):
+    def no_link(*_args):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(snapshot.os, "link", no_link)
+    snap = snapshot.make(PKGS, now=NOW, host="h")
+    paths = [snapshot.save(snap, tmp_path) for _ in range(2)]
+    assert [p.name for p in paths] == [
+        "scan-20260927T010203Z.json",
+        "scan-20260927T010203Z-1.json",
+    ]
+    assert snapshot.load(paths[1])["host"] == "h"
+    assert len(list((tmp_path / "snapshots").iterdir())) == 2
+
+
+def test_save_on_windows_uses_rename(tmp_path, monkeypatch):
+    monkeypatch.setattr(snapshot, "IS_WINDOWS", True)
+    snap = snapshot.make(PKGS, now=NOW, host="h")
+    real_rename = snapshot.os.rename
+
+    def rename(src, dst):
+        if Path(dst).exists():
+            raise FileExistsError(dst)
+        real_rename(src, dst)
+
+    monkeypatch.setattr(snapshot.os, "rename", rename)
+    paths = [snapshot.save(snap, tmp_path) for _ in range(2)]
+    assert paths[1].name == "scan-20260927T010203Z-1.json"
+
+
+def test_save_other_link_error_is_raised(tmp_path, monkeypatch):
+    def broken(*_args):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(snapshot.os, "link", broken)
+    with pytest.raises(OSError):
+        snapshot.save(snapshot.make(PKGS, now=NOW, host="h"), tmp_path)
+    assert not list((tmp_path / "snapshots").iterdir())
+
+
+def test_place_fallback_when_name_taken(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        snapshot.os, "link", lambda *a: (_ for _ in ()).throw(PermissionError(1, "x"))
+    )
+    tmp = tmp_path / "tmp"
+    tmp.write_text("x")
+    taken = tmp_path / "taken"
+    taken.write_text("y")
+    assert not snapshot._place(tmp, taken)  # pylint: disable=protected-access
+
+
+def test_load_rejects_newer_schema(tmp_path):
+    path = tmp_path / "new.json"
+    path.write_text(json.dumps({"schema": 99, "packages": []}))
+    with pytest.raises(ValueError, match="upgrade bomwatch"):
+        snapshot.load(path)
+
+
+def test_try_load_and_latest_skip_broken(tmp_path, capsys):
+    good = snapshot.save(snapshot.make(PKGS, now=NOW, host="h"), tmp_path)
+    broken = tmp_path / "snapshots" / "scan-20260927T020000Z.json"
+    broken.write_text('{"packages": [')
+    assert snapshot.try_load(broken) is None
+    assert "skipping" in capsys.readouterr().err
+    index, snap = snapshot.latest(snapshot.history(tmp_path))
+    assert index == 0 and snap["host"] == "h"
+    assert snapshot.latest([broken]) is None
+    assert snapshot.baseline([broken], ["pip"]) is None
+    assert snapshot.baseline([good, broken], ["pip"])["collectors"] == {
+        "pip": "not run"
+    }
+
+
+def test_status_by_schema():
+    assert snapshot.status({"schema": 1, "collectors": {}}, "npm") == "ok"
+    assert snapshot.status({"schema": 3, "collectors": {}}, "npm") == "not run"
+    assert (
+        snapshot.status({"schema": 3, "collectors": {"npm": "failed"}}, "npm")
+        == "failed"
+    )
+
+
+def test_prune(tmp_path):
+    for hour in range(1, 5):
+        now = datetime(2026, 9, 27, hour, tzinfo=timezone.utc)
+        snapshot.save(snapshot.make([], now=now, host="h"), tmp_path)
+    doomed = snapshot.prune(tmp_path, 3)
+    assert [p.name for p in doomed] == ["scan-20260927T010000Z.json"]
+    assert len(snapshot.history(tmp_path)) == 3
+    assert not snapshot.prune(tmp_path, 10)
+
+
+def test_state_dir_windows(monkeypatch, tmp_path):
+    monkeypatch.delenv("BOMWATCH_STATE_DIR", raising=False)
+    monkeypatch.setattr(snapshot.sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert snapshot.state_dir() == tmp_path / "bomwatch"
+
+
+def test_os_info(monkeypatch):
+    monkeypatch.setattr(
+        snapshot.platform,
+        "freedesktop_os_release",
+        lambda: {"ID": "debian", "VERSION_ID": "12", "NAME": "Debian"},
+    )
+    info = snapshot.os_info()
+    assert info["id"] == "debian" and info["version_id"] == "12" and "name" not in info
+
+    def missing():
+        raise OSError("no os-release")
+
+    monkeypatch.setattr(snapshot.platform, "freedesktop_os_release", missing)
+    assert "id" not in snapshot.os_info()

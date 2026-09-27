@@ -1,0 +1,12 @@
+# The cheap alternative to bomwatch.service: one scan every 15 minutes.
+#   cp bomwatch-scan.service bomwatch-scan.timer ~/.config/systemd/user/
+#   systemctl --user enable --now bomwatch-scan.timer
+[Unit]
+Description=bomwatch: scan every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

@@ -41,7 +41,7 @@ def scan(tmp_path, capsys, *extra):
 def test_scan_prints_counts_and_saves(tmp_path, capsys):
     code, out = scan(tmp_path, capsys)
     assert code == 0
-    assert "dpkg       1" in out.out and "total      2" in out.out
+    assert "dpkg         1" in out.out and "total        2" in out.out
     assert len(list((tmp_path / "snapshots").glob("scan-*.json"))) == 1
 
 
@@ -61,7 +61,7 @@ def test_scan_json_no_save(tmp_path, capsys):
 def test_scan_text_no_save_prints_no_path(tmp_path, capsys):
     code, out = scan(tmp_path, capsys, "--no-save")
     assert code == 0
-    assert "total      2" in out.out and "saved" not in out.out
+    assert "total        2" in out.out and "saved" not in out.out
 
 
 def test_scan_unknown_collector(tmp_path, capsys):
@@ -105,6 +105,7 @@ def test_diff_first_scan_json(tmp_path, capsys):
         "removed": [],
         "upgraded": [],
         "downgraded": [],
+        "changed": [],
         "not_compared": {},
     }
 

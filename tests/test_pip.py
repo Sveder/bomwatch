@@ -89,7 +89,9 @@ def test_site_dirs_only_python3(tmp_path):
     assert not pip.site_dirs(tmp_path / "missing")
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any dir")
+@pytest.mark.skipif(
+    getattr(os, "geteuid", lambda: 0)() == 0, reason="root reads any dir"
+)
 def test_unreadable_site_packages_is_empty(tmp_path):
     site = add_dist(tmp_path, "a", "1")
     site.chmod(0)
@@ -106,9 +108,35 @@ def test_parse_normalizes_and_skips_empty_names():
     ]
 
 
-def test_parse_bad_output():
-    assert not pip.parse("not json")
-    assert not pip.parse(None)
+def test_parse_bad_output_is_a_failure():
+    assert pip.parse("not json") is None
+    assert pip.parse(None) is None
+    assert pip.parse('{"a": 1}') is None
+
+
+def test_windows_env_layout(tmp_path):
+    site = tmp_path / "Lib" / "site-packages"
+    (site / "rich-13.0.dist-info").mkdir(parents=True)
+    (site / "rich-13.0.dist-info" / "METADATA").write_text(
+        "Name: rich\nVersion: 13.0\n"
+    )
+    assert pip.site_dirs(tmp_path) == [site]
+    assert pip.read_prefix(tmp_path, "C:/env", "venv") == [
+        Package("pip", "rich", "13.0", "C:/env", "venv")
+    ]
+
+
+def test_windows_user_sites(tmp_path, monkeypatch):
+    site = tmp_path / "Python" / "Python312" / "site-packages"
+    (site / "six-1.0.dist-info").mkdir(parents=True)
+    (site / "six-1.0.dist-info" / "METADATA").write_text("Name: six\nVersion: 1.0\n")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(pip.sys, "platform", "win32")
+    assert pip.windows_user_sites() == [
+        Package("pip", "six", "1.0", "user-site/python312", "user")
+    ]
+    monkeypatch.setattr(pip.sys, "platform", "linux")
+    assert not pip.windows_user_sites()
 
 
 def test_system_packages_uses_fixed_path(monkeypatch, tmp_path):

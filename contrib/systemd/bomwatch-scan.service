@@ -1,0 +1,8 @@
+# One scan and diff; run by bomwatch-scan.timer. Exit code 3 means changes.
+[Unit]
+Description=bomwatch: one scan and diff
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/bomwatch scan
+ExecStart=-%h/.local/bin/bomwatch diff --vulns

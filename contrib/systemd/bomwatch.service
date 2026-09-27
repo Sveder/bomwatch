@@ -1,0 +1,14 @@
+# Scan every few minutes and log what changed (journalctl --user -u bomwatch).
+# Install:
+#   cp bomwatch.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now bomwatch
+[Unit]
+Description=bomwatch: report new software on this machine
+
+[Service]
+ExecStart=%h/.local/bin/bomwatch watch --interval 300 --vulns
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target

@@ -1,6 +1,7 @@
 """Global npm packages, for every nvm node version and the default prefix."""
 
 import json
+import os
 from pathlib import Path
 
 from bomwatch.model import Package
@@ -35,7 +36,7 @@ def package_dirs(node_modules):
             yield entry
 
 
-def scan_node_modules(node_modules, source):
+def scan_node_modules(node_modules, source, ecosystem="npm"):
     """Return packages installed in one ``node_modules`` directory."""
     node_modules = Path(node_modules)
     if not node_modules.is_dir():
@@ -45,14 +46,21 @@ def scan_node_modules(node_modules, source):
         found = read_package(package_dir)
         if found:
             name, version = found
-            packages.append(Package("npm", name, version, str(node_modules), source))
+            packages.append(
+                Package(ecosystem, name, version, str(node_modules), source)
+            )
     return packages
 
 
 def global_roots(home=None):
-    """Return global ``node_modules`` dirs (nvm and ``npm root -g``), None if npm fails."""
+    """Return global ``node_modules`` dirs (nvm, nvm-windows and ``npm root -g``).
+
+    Returns None if npm is present but fails.
+    """
     home = Path.home() if home is None else Path(home)
     roots = set(home.glob(".nvm/versions/node/*/lib/node_modules"))
+    if os.environ.get("APPDATA"):
+        roots.update(Path(os.environ["APPDATA"]).glob("nvm/v*/node_modules"))
     if has("npm"):
         output = run(["npm", "root", "-g"])
         if output is None:

@@ -8,15 +8,47 @@ ecosystem name, so a diff can leave out the ecosystems that were not scanned.
 import sys
 from pathlib import Path
 
-from bomwatch.collectors import dpkg, npm, pip
-from bomwatch.model import FAILED, OK, SKIPPED
+from bomwatch import walk
+from bomwatch.collectors import (
+    apps,
+    containers,
+    dpkg,
+    npm,
+    npm_project,
+    pip,
+    system,
+    userland,
+    windows,
+)
+from bomwatch.model import FAILED, OK, SKIPPED, Package
 
 COLLECTORS = {
+    # system packages
     "dpkg": dpkg.collect,
+    "rpm": system.collect_rpm,
+    "snap": system.collect_snap,
+    "flatpak": system.collect_flatpak,
+    "brew": userland.collect_brew,
+    # language packages
     "pip": pip.collect,
     "npm": npm.collect,
+    "npm-project": npm_project.collect,
+    "cargo": userland.collect_cargo,
+    "go": userland.collect_go,
+    # containers and editors
+    "docker": containers.collect_docker,
+    "podman": containers.collect_podman,
+    "vscode": userland.collect_vscode,
+    # applications
+    "steam": apps.collect_steam,
+    "portable": apps.collect_portable,
+    "macapp": apps.collect_macapp,
+    "windows": windows.collect_windows,
+    "appx": windows.collect_appx,
+    "scoop": windows.collect_scoop,
+    "choco": windows.collect_choco,
 }
-USES_ROOTS = ("pip",)
+USES_ROOTS = ("pip", "npm-project")
 
 
 def default_roots():
@@ -42,7 +74,8 @@ def run_collector(name, collect, roots):
 def collect_all(roots=None, only=None):
     """Run the collectors and return (sorted packages, {collector: status})."""
     roots = resolve_roots(roots)
-    packages = set()
+    walk.clear()
+    packages: set[Package] = set()
     status = {}
     for name, collect in COLLECTORS.items():
         if only and name not in only:

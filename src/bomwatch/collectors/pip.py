@@ -6,9 +6,11 @@ Envs are read from their metadata files; no interpreter under the roots is run.
 import json
 import os
 import re
+import sys
 from email.parser import HeaderParser
 from pathlib import Path
 
+from bomwatch import walk
 from bomwatch.model import Package
 from bomwatch.runner import run
 
@@ -18,8 +20,7 @@ LIST_SCRIPT = (
     "print(json.dumps(sorted({(d.metadata['Name'] or '', d.version or '')"
     " for d in m.distributions()})))"
 )
-SKIP_DIRS = {"node_modules", ".git", ".cache", "__pycache__", "proc", "sys"}
-MAX_DEPTH = 6
+MAX_DEPTH = walk.MAX_DEPTH
 
 
 def normalize(name):
@@ -29,22 +30,7 @@ def normalize(name):
 
 def find_envs(roots, max_depth=MAX_DEPTH):
     """Return venv (``pyvenv.cfg``) and conda (``conda-meta/``) dirs under ``roots``."""
-    found = set()
-    for root in roots:
-        root = Path(root)
-        base_depth = len(root.parts)
-        for current, dirs, files in os.walk(root):
-            if "pyvenv.cfg" in files:
-                found.add(Path(current))
-                dirs[:] = []
-                continue
-            if "conda-meta" in dirs:
-                found.add(Path(current))
-                dirs[:] = [d for d in dirs if d == "envs"]
-                continue
-            depth = len(Path(current).parts) - base_depth
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and depth < max_depth]
-    return sorted(found)
+    return list(walk.find(roots, max_depth).envs)
 
 
 def list_dir(path):
@@ -56,12 +42,20 @@ def list_dir(path):
 
 
 def site_dirs(prefix):
-    """Return the ``lib/python3*/site-packages`` dirs of an env or user prefix."""
-    return [
+    """Return the site-packages dirs of an env or user prefix.
+
+    That is ``lib/python3*/site-packages`` on POSIX and ``Lib/site-packages``
+    in a Windows env.
+    """
+    found = [
         lib / "site-packages"
         for lib in list_dir(Path(prefix) / "lib")
         if lib.name.startswith("python3")
     ]
+    windows = Path(prefix) / "Lib" / "site-packages"
+    if not found and windows.is_dir():
+        found.append(windows)
+    return found
 
 
 def metadata_file(entry):
@@ -115,11 +109,17 @@ def read_prefix(prefix, location, source, tag=False):
 
 
 def parse(output):
-    """Turn the JSON printed by LIST_SCRIPT into system packages."""
+    """Turn the JSON printed by LIST_SCRIPT into system packages.
+
+    Returns None when the output is not that JSON: an empty list would count
+    as a good scan and report every system package as removed.
+    """
     try:
         pairs = json.loads(output)
+        if not isinstance(pairs, list):
+            return None
     except (TypeError, ValueError):
-        return []
+        return None
     return [
         Package("pip", normalize(name), version, "system", "system")
         for name, version in pairs
@@ -135,12 +135,28 @@ def system_packages():
     return None if output is None else parse(output)
 
 
+def windows_user_sites():
+    """Return packages of the Windows user sites, ``%APPDATA%\\Python\\Python3NN``."""
+    appdata = os.environ.get("APPDATA")
+    if sys.platform != "win32" or not appdata:
+        return []
+    return [
+        pkg
+        for version in list_dir(Path(appdata) / "Python")
+        if version.name.startswith("Python3")
+        for pkg in read_site(
+            version / "site-packages", f"user-site/{version.name.lower()}", "user"
+        )
+    ]
+
+
 def collect(roots):
     """Return pip packages, or None if the system interpreter fails."""
     packages = system_packages()
     if packages is None:
         return None
     packages += read_prefix(Path.home() / ".local", "user-site", "user", tag=True)
+    packages += windows_user_sites()
     for env in find_envs(roots):
         source = "conda" if (env / "conda-meta").is_dir() else "venv"
         packages += read_prefix(env, str(env), source)
