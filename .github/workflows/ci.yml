@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - run: make lint PY=python
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - run: make test PY=python
+
+  windows:
+    # The Windows collectors against a real registry, plus the platform
+    # neutral unit tests.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - run: >
+          python -m pytest -o addopts="" tests/test_windows.py tests/test_versions.py
+          tests/test_export.py tests/test_vulns.py tests/test_diff.py tests/test_model.py
+      - name: scan this runner
+        shell: bash
+        run: |
+          bomwatch scan --json --state-dir "$RUNNER_TEMP/bw" | tee scan.json
+          python - <<'PY'
+          import json
+          scan = json.load(open("scan.json"))
+          assert scan["collectors"]["windows"] == "ok", scan
+          assert scan["counts"].get("windows", 0) > 10, scan
+          assert scan["counts"].get("pip", 0) > 0, scan
+          PY
+          bomwatch export --state-dir "$RUNNER_TEMP/bw" --format cyclonedx -o sbom.json
+          python -c "import json; assert json.load(open('sbom.json'))['bomFormat'] == 'CycloneDX'"
+
+  integration:
+    # A real Debian with dpkg, pip envs and global npm packages.
+    runs-on: ubuntu-latest
+    container: python:3.12-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y --no-install-recommends nodejs npm
+      - run: python -m pip install -e .
+      - run: sh ci/integration.sh

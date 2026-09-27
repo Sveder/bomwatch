@@ -18,8 +18,9 @@ def pkg(name, version, eco="pip"):
         ("9", "10"),
     ],
 )
-def test_version_key(low, high):
-    assert diff.version_key(low) < diff.version_key(high)
+def test_generic_order(low, high):
+    assert diff.change_kind("x", low, high) == "upgraded"
+    assert diff.change_kind("x", high, low) == "downgraded"
 
 
 def test_compare_all_kinds():
@@ -31,6 +32,27 @@ def test_compare_all_kinds():
     assert changes["upgraded"] == [{"old": pkg("up", "1.9"), "new": pkg("up", "1.10")}]
     assert changes["downgraded"] == [{"old": pkg("down", "2"), "new": pkg("down", "1")}]
     assert not diff.is_empty(changes)
+
+
+def test_pre_release_to_final_is_upgrade():
+    for eco, old, new in [
+        ("pip", "1.0rc1", "1.0"),
+        ("dpkg", "1.0~rc1-1", "1.0-1"),
+        ("npm", "2.0.0-beta", "2.0.0"),
+    ]:
+        changes = diff.compare([pkg("a", old, eco)], [pkg("a", new, eco)])
+        assert changes["upgraded"], (eco, old, new)
+
+
+def test_unordered_versions_are_changed():
+    changes = diff.compare(
+        [pkg("img", "sha1", "docker")], [pkg("img", "sha2", "docker")]
+    )
+    assert changes["changed"] == [
+        {"old": pkg("img", "sha1", "docker"), "new": pkg("img", "sha2", "docker")}
+    ]
+    assert diff.to_lines(changes) == ["~ docker img sha1 -> sha2 (/env)"]
+    assert diff.new_packages(changes) == [pkg("img", "sha2", "docker")]
 
 
 def test_same_order_different_string_is_upgrade():

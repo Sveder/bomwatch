@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bomwatch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Software bill of materials for a machine, with alerts when new software appears."
 readme = "README.md"
 license = { text = "MIT" }
@@ -14,10 +14,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
 ]
 
 [project.optional-dependencies]
-dev = ["black", "pylint", "pytest", "pytest-cov"]
+dev = ["black", "mypy", "pre-commit", "pylint", "pytest", "pytest-cov", "ruff"]
 
 [project.scripts]
 bomwatch = "bomwatch.cli:main"
@@ -33,7 +37,39 @@ addopts = "--cov=bomwatch --cov-branch --cov-report=term-missing --cov-fail-unde
 fail-under = 9.5
 
 [tool.pylint."messages control"]
-disable = ["too-few-public-methods"]
+disable = [
+    "too-few-public-methods",
+    "too-many-return-statements",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+]
 
 [tool.black]
 target-version = ["py310"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP", "S", "PL"]
+ignore = [
+    "E501",     # black decides line length
+    "S603",     # subprocess without shell is the point of runner.py
+    "PLR2004",  # magic values read fine in parsers
+    "PLR0911",  # early returns
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR0917",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S108", "PLC0415", "N802"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/bomwatch"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true

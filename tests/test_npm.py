@@ -63,7 +63,9 @@ def test_global_roots_ignores_empty_npm_output(tmp_path, monkeypatch):
     assert not npm.global_roots(tmp_path)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read a mode 000 dir")
+@pytest.mark.skipif(
+    getattr(os, "geteuid", lambda: 0)() == 0, reason="root can read a mode 000 dir"
+)
 def test_unreadable_scope_dir_is_skipped(tmp_path):
     nm = tmp_path / "node_modules"
     add_package(nm, "left-pad", "1.3.0")
