@@ -48,6 +48,44 @@ def uninstall_views(reg):
     ]
 
 
+PYTHON_CORE = r"SOFTWARE\Python\PythonCore"
+
+
+def python_installs(reg):
+    """Return the install dirs of the Python 3 interpreters registered per PEP 514.
+
+    python.org installers, the ``py`` launcher and most tools record each
+    interpreter under ``PythonCore\\<tag>\\InstallPath``.
+    """
+    found = set()
+    for _, hive, access in uninstall_views(reg):
+        try:
+            core = reg.OpenKey(hive, PYTHON_CORE, 0, access)
+        except OSError:
+            continue
+        with core:
+            for tag in list(subkeys(reg, core)):
+                if not tag.startswith("3"):
+                    continue
+                path = install_path(reg, core, tag)
+                if path:
+                    found.add(path)
+    return sorted(found)
+
+
+def install_path(reg, core, tag):
+    """Return the ``InstallPath`` of one ``PythonCore\\<tag>`` key, or None."""
+    try:
+        with (
+            reg.OpenKey(core, tag) as version,
+            reg.OpenKey(version, "InstallPath") as key,
+        ):
+            path = value(reg, key, "")
+    except OSError:
+        return None
+    return str(path) if path else None
+
+
 def value(reg, key, name):
     """Return one registry value, or None when it is not there."""
     try:

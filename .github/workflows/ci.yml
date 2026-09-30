@@ -62,16 +62,26 @@ jobs:
       - name: scan this runner
         shell: bash
         run: |
+          # A venv under the home dir exercises the Windows Lib\site-packages layout.
+          python -m venv "$USERPROFILE/bw-env"
           bomwatch scan --json --state-dir "$RUNNER_TEMP/bw" | tee scan.json
+          bomwatch export --state-dir "$RUNNER_TEMP/bw" --format cyclonedx -o sbom.json
           python - <<'PY'
           import json
           scan = json.load(open("scan.json"))
           assert scan["collectors"]["windows"] == "ok", scan
           assert scan["counts"].get("windows", 0) > 10, scan
-          assert scan["counts"].get("pip", 0) > 0, scan
+          sbom = json.load(open("sbom.json"))
+          assert sbom["bomFormat"] == "CycloneDX"
+          locations = {
+              p["value"]
+              for c in sbom["components"]
+              for p in c["properties"]
+              if p["name"] == "bomwatch:location" and c["purl"].startswith("pkg:pypi/")
+          }
+          print("pip locations:", sorted(locations))
+          assert any(loc.endswith("bw-env") for loc in locations), locations
           PY
-          bomwatch export --state-dir "$RUNNER_TEMP/bw" --format cyclonedx -o sbom.json
-          python -c "import json; assert json.load(open('sbom.json'))['bomFormat'] == 'CycloneDX'"
 
   integration:
     # A real Debian with dpkg, pip envs and global npm packages.

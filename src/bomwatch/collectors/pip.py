@@ -11,6 +11,7 @@ from email.parser import HeaderParser
 from pathlib import Path
 
 from bomwatch import walk
+from bomwatch.collectors import windows
 from bomwatch.model import Package
 from bomwatch.runner import run
 
@@ -52,9 +53,9 @@ def site_dirs(prefix):
         for lib in list_dir(Path(prefix) / "lib")
         if lib.name.startswith("python3")
     ]
-    windows = Path(prefix) / "Lib" / "site-packages"
-    if not found and windows.is_dir():
-        found.append(windows)
+    windows_site = Path(prefix) / "Lib" / "site-packages"
+    if not found and windows_site.is_dir():
+        found.append(windows_site)
     return found
 
 
@@ -150,11 +151,34 @@ def windows_user_sites():
     ]
 
 
+def windows_system_packages(reg=None):
+    """Return packages of the Windows interpreters registered per PEP 514.
+
+    Their ``Lib\\site-packages`` dirs are read like any env; no interpreter
+    is run. The location is ``system/<install dir name>``, e.g.
+    ``system/python312``.
+    """
+    if reg is None:
+        if sys.platform != "win32":
+            return []
+        import winreg as reg  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+    return [
+        pkg
+        for install in windows.python_installs(reg)
+        for pkg in read_site(
+            Path(install) / "Lib" / "site-packages",
+            f"system/{Path(install).name.lower()}",
+            "system",
+        )
+    ]
+
+
 def collect(roots):
     """Return pip packages, or None if the system interpreter fails."""
     packages = system_packages()
     if packages is None:
         return None
+    packages += windows_system_packages()
     packages += read_prefix(Path.home() / ".local", "user-site", "user", tag=True)
     packages += windows_user_sites()
     for env in find_envs(roots):

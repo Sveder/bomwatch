@@ -1,7 +1,7 @@
 # pylint: disable=invalid-name
 import json
 
-from bomwatch.collectors import windows
+from bomwatch.collectors import pip, windows
 from bomwatch.model import Package
 
 
@@ -167,3 +167,36 @@ def test_choco(tmp_path, monkeypatch):
     assert windows.choco_lib() == lib
     assert len(windows.collect_choco([])) == 1
     assert not windows.collect_choco([], lib=tmp_path / "nope")
+
+
+def python_core(**installs):
+    return Key(
+        children={
+            tag: Key(children={} if path is None else {"InstallPath": Key({"": path})})
+            for tag, path in installs.items()
+        }
+    )
+
+
+def test_python_installs_and_system_packages(tmp_path):
+    install = tmp_path / "Python312"
+    dist = install / "Lib" / "site-packages" / "requests-2.32.0.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text("Name: requests\nVersion: 2.32.0\n")
+    reg = FakeWinreg(
+        {
+            ("HKLM", 1 | 0x100): python_core(
+                **{"3.12": str(install), "2.7": "C:/Py27"}
+            ),
+            ("HKCU", 1): python_core(**{"3.13": "", "3.11": None}),
+        }
+    )
+    assert windows.python_installs(reg) == [str(install)]
+    assert pip.windows_system_packages(reg) == [
+        Package("pip", "requests", "2.32.0", "system/python312", "system")
+    ]
+
+
+def test_windows_system_packages_off_windows(monkeypatch):
+    monkeypatch.setattr(pip.sys, "platform", "linux")
+    assert not pip.windows_system_packages()
