@@ -200,7 +200,10 @@ pre-commit install
 
 CI (`.github/workflows/ci.yml`) runs lint, the tests on Python 3.10 to 3.14 and
 macOS, the Windows collectors against a real Windows registry, and the
-integration script in a Debian container. CodeQL and Dependabot are set up too.
+integration script in a Debian container. CodeQL and Dependabot are set up
+too. CodeQL results are kept as a workflow artifact; once code scanning is
+enabled for the repo, set the Actions variable `CODE_SCANNING=true` to send
+them to the Security tab.
 
 The site in `docs/` is published by `.github/workflows/pages.yml`. Turn it on
 once under Settings > Pages > Source: GitHub Actions.
