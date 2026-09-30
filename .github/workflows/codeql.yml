@@ -1,5 +1,10 @@
 name: codeql
 
+# Results go to the Security tab only when code scanning is on for the repo
+# (Settings > Code security; private repos need GitHub Advanced Security).
+# Turn uploads on with the repository variable CODE_SCANNING=true
+# (Settings > Secrets and variables > Actions > Variables). Until then the
+# SARIF results are kept as a workflow artifact.
 on:
   push:
     branches: [main]
@@ -23,3 +28,10 @@ jobs:
         with:
           languages: python
       - uses: github/codeql-action/analyze@v3
+        with:
+          upload: ${{ vars.CODE_SCANNING == 'true' && 'always' || 'never' }}
+          output: codeql-results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: codeql-results
