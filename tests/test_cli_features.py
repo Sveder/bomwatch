@@ -217,3 +217,41 @@ def test_new_collectors_are_not_run_in_old_scans(tmp_path, capsys):
 def test_verbose_logs_to_stderr(tmp_path, capsys):
     code, _ = run(capsys, "scan", "-vv", "--no-save", "--state-dir", str(tmp_path))
     assert code == 0
+
+
+def test_audit_and_alert_exit(installed, tmp_path, capsys):
+    code, out = run(capsys, "audit", "--state-dir", str(tmp_path))
+    assert code == 1
+    installed["pkgs"] = [Package("pip", "jinja2", "2.10", "/e")]
+    run(capsys, "scan", "--state-dir", str(tmp_path))
+    code, out = run(capsys, "audit", "--state-dir", str(tmp_path))
+    assert code == 0 and out.out.strip() == "nothing flagged"
+    installed["pkgs"] = [
+        Package("pip", "jinja2", "2.10", "/e"),
+        Package("pip", "evil", "1.0", "/e", "npx -y evil-mcp", "unpinned-launch"),
+        Package("pip", "hook", "1.0", "/e", "hook", "pipe-to-shell"),
+    ]
+    run(capsys, "scan", "--state-dir", str(tmp_path))
+    code, out = run(capsys, "diff", "--state-dir", str(tmp_path))
+    assert code == 4
+    assert "+ pip evil 1.0 (/e) [unpinned-launch]" in out.out
+    code, out = run(capsys, "audit", "--state-dir", str(tmp_path))
+    assert code == 4
+    assert out.out.splitlines() == [
+        "! pip evil (/e) [unpinned-launch]",
+        "    npx -y evil-mcp",
+        "! pip hook (/e) [pipe-to-shell]",
+    ]
+    code, out = run(capsys, "audit", "--json", "--state-dir", str(tmp_path))
+    assert [p["flags"] for p in json.loads(out.out)] == [
+        "unpinned-launch",
+        "pipe-to-shell",
+    ]
+
+
+@pytest.mark.usefixtures("installed")
+def test_diff_hides_notes_for_collectors_that_never_ran(tmp_path, capsys):
+    run(capsys, "scan", "--only", "pip", "--state-dir", str(tmp_path))
+    run(capsys, "scan", "--only", "pip", "--state-dir", str(tmp_path))
+    code, out = run(capsys, "diff", "--state-dir", str(tmp_path))
+    assert code == 0 and out.out.strip() == "no changes"

@@ -17,3 +17,11 @@ def test_sorting_is_stable():
     first = Package("dpkg", "a", "1")
     second = Package("dpkg", "b", "1")
     assert sorted([second, first]) == [first, second]
+
+
+def test_flags_only_in_dict_when_set():
+    assert "flags" not in Package("pip", "a", "1").to_dict()
+    assert (
+        Package("mcp", "a", "1", flags="remote-http").to_dict()["flags"]
+        == "remote-http"
+    )

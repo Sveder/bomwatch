@@ -10,8 +10,11 @@ from pathlib import Path
 
 from bomwatch import walk
 from bomwatch.collectors import (
+    agents,
     apps,
+    autostart,
     containers,
+    credentials,
     dpkg,
     npm,
     npm_project,
@@ -47,8 +50,14 @@ COLLECTORS = {
     "appx": windows.collect_appx,
     "scoop": windows.collect_scoop,
     "choco": windows.collect_choco,
+    # what runs later, who can log in, what agents may do and are told
+    "autostart": autostart.collect,
+    "credential": credentials.collect,
+    "mcp": agents.collect_mcp,
+    "agent-config": agents.collect_config,
+    "agent-memory": agents.collect_memory,
 }
-USES_ROOTS = ("pip", "npm-project")
+USES_ROOTS = ("pip", "npm-project", "mcp", "agent-config", "agent-memory")
 
 
 def default_roots():

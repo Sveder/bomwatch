@@ -250,7 +250,17 @@ compare_pep440 = _by_key(pep440_key)
 compare_semver = _by_key(semver_key)
 compare_generic = _by_key(generic_key)
 
-UNORDERED = frozenset({"docker", "podman"})
+UNORDERED = frozenset(
+    {
+        "docker",
+        "podman",
+        "autostart",
+        "credential",
+        "mcp",
+        "agent-config",
+        "agent-memory",
+    }
+)
 COMPARATORS: dict[str, Callable[[str, str], int]] = {
     "dpkg": compare_deb,
     "rpm": compare_rpm,

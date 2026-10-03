@@ -140,7 +140,7 @@ def test_scoop(tmp_path, monkeypatch):
     apps = tmp_path / "scoop" / "apps"
     (apps / "godot" / "current").mkdir(parents=True)
     (apps / "godot" / "current" / "manifest.json").write_text(
-        "﻿" + json.dumps({"version": "4.3"}), encoding="utf-8"
+        "\ufeff" + json.dumps({"version": "4.3"}), encoding="utf-8"
     )
     (apps / "broken" / "current").mkdir(parents=True)
     (apps / "broken" / "current" / "manifest.json").write_text("{")

@@ -27,7 +27,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_CHANGES = 3
-EXIT_VULNS = 4
+EXIT_VULNS = 4  # also: a new record is flagged or a credential (diff, audit)
 
 
 def collector_list(text):
@@ -103,6 +103,11 @@ def build_parser():
     out.add_argument("file", nargs="?", metavar="FILE", help="snapshot, default newest")
     out.add_argument("--format", choices=export.FORMATS, default="cyclonedx")
     out.add_argument("-o", "--output", help="file to write, default stdout")
+
+    audit = command("audit", cmd_audit, "list flagged records of a snapshot")
+    audit.add_argument(
+        "file", nargs="?", metavar="FILE", help="snapshot, default newest"
+    )
 
     vuln = command("vulns", cmd_vulns, "look up known vulnerabilities on osv.dev")
     vuln.add_argument(
@@ -249,10 +254,11 @@ def cmd_diff(args):
     else:
         print("\n".join(diff.to_lines(changes)) or "no changes")
         for name, reason in skipped.items():
-            print(f"note: {name} not compared ({reason})")
+            if diff.noteworthy(reason):
+                print(f"note: {name} not compared ({reason})")
         for line in vulns.report(found, details):
             print(line)
-    if found:
+    if found or diff.alerts(changes):
         return EXIT_VULNS
     return EXIT_OK if diff.is_empty(changes) else EXIT_CHANGES
 
@@ -276,6 +282,22 @@ def cmd_export(args):
     else:
         sys.stdout.write(text)
     return EXIT_OK
+
+
+def cmd_audit(args):
+    """Print every flagged record of a snapshot: what a person should look at."""
+    snap = load_one(args)
+    flagged = sorted(p for p in snap["packages"] if p.flags)
+    if args.json:
+        print(json.dumps([p.to_dict() for p in flagged], sort_keys=True))
+    elif not flagged:
+        print("nothing flagged")
+    for pkg in flagged if not args.json else []:
+        print(f"! {pkg.ecosystem} {pkg.name} ({pkg.location}) [{pkg.flags}]")
+        # Sources that are a command line or a URL say what will run.
+        if " " in pkg.source or "/" in pkg.source:
+            print(f"    {pkg.source}")
+    return EXIT_VULNS if flagged else EXIT_OK
 
 
 def cmd_vulns(args):

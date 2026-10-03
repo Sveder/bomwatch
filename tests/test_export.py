@@ -98,3 +98,11 @@ def test_spdx():
         "pkg:pypi/requests@2.32.0"
     )
     assert "versionInfo" not in doc["packages"][3]
+
+
+def test_flags_are_exported():
+    flagged = Package("mcp", "remote", "abc", "/c", "http://x", "remote-http")
+    snap = {**SNAP, "packages": [flagged]}
+    props = export.export(snap, "cyclonedx")["components"][0]["properties"]
+    assert {"name": "bomwatch:flags", "value": "remote-http"} in props
+    assert "flags: remote-http" in export.export(snap, "spdx")["packages"][1]["comment"]

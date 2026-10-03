@@ -133,13 +133,16 @@ The agent acts outside its mandate or drifts over time.
 
 ## Plan
 
-1. **Autostart and credentials (ASI05, ASI03).** New collectors `autostart`
-   and `credential`. *In progress on `a feature branch`.*
+1. **Autostart and credentials (ASI05, ASI03).** Collectors `autostart`
+   and `credential`. *Done.*
 2. **Agent config and memory (ASI02, ASI06, the MCP part of ASI04, ASI07).**
-   New collectors `mcp`, `agent-config`, `agent-memory`. *In progress on the
-   same branch.*
+   Collectors `mcp`, `agent-config`, `agent-memory`. *Done.*
 3. A `PreToolUse` policy hook to block what 1 and 2 report.
 4. Outbound domain log.
+
+Not covered yet from 1 and 2: git hooks in repos, setuid binaries,
+listening ports, Cursor permissions (kept in a SQLite database), and
+package age and typosquat checks.
 
 Records from 1 and 2 carry **flags**, short names for what looks dangerous
 (`pipe-to-shell`, `remote-http`, `hidden-unicode` ...). `bomwatch diff`

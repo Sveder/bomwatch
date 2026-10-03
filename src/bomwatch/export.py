@@ -94,7 +94,8 @@ def cyclonedx(snap: dict) -> dict:
                 {"name": "bomwatch:ecosystem", "value": pkg.ecosystem},
                 {"name": "bomwatch:location", "value": pkg.location},
                 {"name": "bomwatch:source", "value": pkg.source},
-            ],
+            ]
+            + ([{"name": "bomwatch:flags", "value": pkg.flags}] if pkg.flags else []),
         }
         if pkg.version:
             component["version"] = pkg.version
@@ -157,7 +158,8 @@ def spdx(snap: dict) -> dict:
             "name": pkg.name,
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": False,
-            "comment": f"{pkg.ecosystem} at {pkg.location or '-'} ({pkg.source})",
+            "comment": f"{pkg.ecosystem} at {pkg.location or '-'} ({pkg.source})"
+            + (f" flags: {pkg.flags}" if pkg.flags else ""),
             "externalRefs": [
                 {
                     "referenceCategory": "PACKAGE-MANAGER",

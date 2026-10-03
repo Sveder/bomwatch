@@ -59,6 +59,7 @@ jobs:
       - run: >
           python -m pytest -o addopts="" tests/test_windows.py tests/test_versions.py
           tests/test_export.py tests/test_vulns.py tests/test_diff.py tests/test_model.py
+          tests/test_checks.py tests/test_autostart.py tests/test_agents.py
       - name: scan this runner
         shell: bash
         run: |
@@ -71,6 +72,9 @@ jobs:
           scan = json.load(open("scan.json"))
           assert scan["collectors"]["windows"] == "ok", scan
           assert scan["counts"].get("windows", 0) > 10, scan
+          # Run keys, Startup folders and scheduled tasks from the real system.
+          assert scan["collectors"]["autostart"] == "ok", scan
+          assert scan["collectors"]["credential"] == "ok", scan
           sbom = json.load(open("sbom.json"))
           assert sbom["bomFormat"] == "CycloneDX"
           locations = {

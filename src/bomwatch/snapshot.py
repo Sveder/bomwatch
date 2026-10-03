@@ -15,7 +15,7 @@ from pathlib import Path
 
 from bomwatch.model import OK, Package
 
-SCHEMA = 4
+SCHEMA = 5
 OTHER_ROOTS = "other roots"
 NOT_RUN = "not run"
 IS_WINDOWS = os.name == "nt"

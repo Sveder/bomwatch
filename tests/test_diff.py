@@ -105,3 +105,28 @@ def test_roots_differ():
     }
     assert not diff.roots_differ(["/a"], ["/a"], ("pip",))
     assert not diff.roots_differ(None, ["/a"], ("pip",))
+
+
+def test_flags_and_alerts():
+    hook = Package(
+        "agent-config", "hook X: curl x | sh", "a1", "/s", "hook", "pipe-to-shell"
+    )
+    key = Package("credential", "ssh-login ssh-ed25519 a@b", "SHA256:x", "/k")
+    memo = Package("agent-memory", "CLAUDE.md", "b2", "/p")
+    old_memo = Package("agent-memory", "CLAUDE.md", "b1", "/p")
+    changes = diff.compare([old_memo], [hook, key, memo])
+    assert diff.alerts(changes) == [hook, key]
+    lines = diff.to_lines(changes)
+    assert "+ agent-config hook X: curl x | sh a1 (/s) [pipe-to-shell]" in lines
+    assert "~ agent-memory CLAUDE.md b1 -> b2 (/p)" in lines
+    assert diff.to_lines(
+        diff.compare([], [Package("autostart", "cron", "", "/c")])
+    ) == ["+ autostart cron (/c)"]
+    assert not diff.alerts(diff.compare([key], []))
+
+
+def test_noteworthy():
+    assert diff.noteworthy("skipped in NEW")
+    assert diff.noteworthy("failed in OLD, skipped in NEW")
+    assert not diff.noteworthy("skipped in OLD, skipped in NEW")
+    assert not diff.noteworthy("not run in OLD, skipped in NEW")

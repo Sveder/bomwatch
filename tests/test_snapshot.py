@@ -24,7 +24,7 @@ def test_make_is_sorted():
     assert snap["collectors"] == {"dpkg": "ok", "pip": "ok"}
     assert snap["created"] == "2026-09-27T01:02:03Z"
     assert snap["host"] == "h"
-    assert snap["schema"] == 4
+    assert snap["schema"] == 5
     assert snap["os"]["system"]
     assert snap["roots"] is None
     assert [p["name"] for p in snap["packages"]] == ["a", "b"]
