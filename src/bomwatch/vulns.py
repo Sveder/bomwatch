@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from bomwatch import __version__
 from bomwatch.model import Package
@@ -17,6 +18,8 @@ API = "https://api.osv.dev/v1"
 BATCH = 1000
 TIMEOUT = 30
 DETAIL_LIMIT = 100
+APT_LISTS = Path("/var/lib/apt/lists")
+DISTRO_ORIGINS = {"Ubuntu", "Debian"}
 
 
 def debian_ecosystem(system: dict) -> str | None:
@@ -30,6 +33,53 @@ def debian_ecosystem(system: dict) -> str | None:
         lts = ":LTS" if "LTS" in system.get("version", "") else ""
         return f"Ubuntu:{release}{lts}"
     return None
+
+
+def release_origin(path: Path) -> str:
+    """Return the ``Origin:`` field of an apt Release or InRelease file."""
+    try:
+        for line in path.read_text(errors="replace").splitlines():
+            if line.startswith("Origin:"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
+def third_party_debs(lists_dir: Path = APT_LISTS) -> set[tuple[str, str]]:
+    """Return ``{(name, version)}`` of the debs that other apt repos ship.
+
+    A repo whose Release file names an origin other than Ubuntu or Debian
+    (Netdata, Docker, Tailscale ...) is third party. Its packages share names
+    with the distro packages, but not the version scheme. The distro records
+    in OSV often list a CVE as unfixed for every version, so a query with a
+    third-party version always matches and gives a false alarm.
+    """
+    if not lists_dir.is_dir():
+        return set()
+    prefixes = []
+    for release in lists_dir.iterdir():
+        name = release.name
+        for suffix in ("_InRelease", "_Release"):
+            if name.endswith(suffix):
+                if release_origin(release) not in DISTRO_ORIGINS:
+                    prefixes.append(name[: -len(suffix) + 1])
+    found: set[tuple[str, str]] = set()
+    for index in lists_dir.iterdir():
+        if not index.name.endswith("_Packages"):
+            continue
+        if not any(index.name.startswith(p) for p in prefixes):
+            continue
+        package = ""
+        try:
+            for line in index.read_text(errors="replace").splitlines():
+                if line.startswith("Package:"):
+                    package = line.split(":", 1)[1].strip()
+                elif line.startswith("Version:") and package:
+                    found.add((package, line.split(":", 1)[1].strip()))
+        except OSError:
+            continue
+    return found
 
 
 def query(pkg: Package, system: dict | None = None) -> dict | None:
@@ -80,12 +130,21 @@ def get(url: str) -> dict:
         return json.load(answer)
 
 
-def lookup(packages, system=None) -> dict[Package, list[str]]:
+def lookup(packages, system=None, lists_dir=APT_LISTS) -> dict[Package, list[str]]:
     """Return ``{package: [vulnerability ids]}`` for the packages with known vulns.
+
+    Debs from third-party apt repos are not sent: OSV holds no records for
+    those repos, only distro records that do not match their versions.
 
     Raises OSError when OSV cannot be reached.
     """
-    wanted = [(p, q) for p in packages if (q := query(p, system))]
+    foreign = third_party_debs(lists_dir) if lists_dir else set()
+    wanted = [
+        (p, q)
+        for p in packages
+        if not (p.ecosystem == "dpkg" and (p.name, p.version) in foreign)
+        and (q := query(p, system))
+    ]
     found: dict[Package, list[str]] = {}
     for start in range(0, len(wanted), BATCH):
         chunk = wanted[start : start + BATCH]

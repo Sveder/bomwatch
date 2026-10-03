@@ -103,3 +103,56 @@ def test_lookup_and_summaries(monkeypatch):
         {"id": "B", "summary": ""},
     ]
     assert sent[0].get_header("User-agent").startswith("bomwatch/")
+
+
+def write_repo(lists, prefix, origin, packages, release="_InRelease"):
+    (lists / f"{prefix}{release}").write_text(f"Hash: SHA256\n\nOrigin: {origin}\n")
+    body = "".join(f"Package: {n}\nVersion: {v}\n\n" for n, v in packages)
+    (lists / f"{prefix}_main_binary-amd64_Packages").write_text(body)
+
+
+def test_third_party_debs(tmp_path):
+    write_repo(
+        tmp_path,
+        "archive.ubuntu.com_ubuntu_dists_noble",
+        "Ubuntu",
+        [("netdata", "1.43.2-1"), ("bash", "5.2-2")],
+    )
+    write_repo(
+        tmp_path,
+        "repository.netdata.cloud_repos_edge_ubuntu_noble",
+        "Netdata",
+        [("netdata", "2.12.0.26.nightly")],
+        release="_Release",
+    )
+    (tmp_path / "broken_InRelease").mkdir()
+    assert vulns.third_party_debs(tmp_path) == {("netdata", "2.12.0.26.nightly")}
+    assert vulns.third_party_debs(tmp_path / "missing") == set()
+    assert vulns.release_origin(tmp_path / "missing") == ""
+
+
+def test_lookup_skips_third_party_debs(tmp_path, monkeypatch):
+    write_repo(
+        tmp_path,
+        "repository.netdata.cloud_repos_edge_ubuntu_noble",
+        "Netdata",
+        [("netdata", "2.12.0.26.nightly")],
+    )
+    sent = []
+
+    def post(url, body):  # pylint: disable=unused-argument
+        sent.extend(q["package"]["name"] for q in body["queries"])
+        return {"results": [{} for _ in body["queries"]]}
+
+    monkeypatch.setattr(vulns, "post", post)
+    system = {"id": "ubuntu", "version_id": "24.04", "version": "24.04.3 LTS"}
+    packages = [
+        Package("dpkg", "netdata", "2.12.0.26.nightly", "amd64", "netdata"),
+        Package("dpkg", "netdata", "1.43.2-1", "amd64", "netdata"),
+        Package("dpkg", "bash", "5.2-2", "amd64", "bash"),
+    ]
+    assert vulns.lookup(packages, system, lists_dir=tmp_path) == {}
+    assert sent == ["netdata", "bash"]
+    sent.clear()
+    vulns.lookup(packages, system, lists_dir=None)
+    assert sent == ["netdata", "netdata", "bash"]
